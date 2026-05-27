@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulasi Dinamit - Fixed Version</title>
+    <style>
+        /* --- CSS (GAYA TAMPILAN) --- */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Courier New', Courier, monospace;
+        }
+
+        body {
+            background-color: #1a1a1a;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 10px;
+        }
+
+        .phone-container {
+            width: 100%;
+            max-width: 380px;
+            height: 90vh;
+            background-color: #222;
+            border-radius: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.7);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            border: 3px solid #333;
+        }
+
+        .dynamite-bundle {
+            flex: 1;
+            background-color: #111;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .warning-text {
+            color: #ff3333;
+            font-weight: bold;
+            font-size: 11px;
+            margin-bottom: 20px;
+            text-align: center;
+            height: 30px;
+            text-transform: uppercase;
+        }
+
+        .sticks-container {
+            display: flex;
+            gap: 8px;
+            position: relative;
+            margin-bottom: 25px;
+        }
+
+        .sticks-container::before, .sticks-container::after {
+            content: '';
+            position: absolute;
+            width: 110%;
+            height: 15px;
+            background: #000;
+            left: -5%;
+            z-index: 2;
+        }
+        .sticks-container::before { top: 20%; }
+        .sticks-container::after { bottom: 20%; }
+
+        .stick {
+            width: 40px;
+            height: 130px;
+            background: linear-gradient(90deg, #cc0000 0%, #ff3333 50%, #990000 100%);
+            border-radius: 4px;
+        }
+
+        .timer-display {
+            background-color: #000;
+            color: #ff0000;
+            font-size: 42px;
+            padding: 10px 20px;
+            border: 2px solid #444;
+            border-radius: 5px;
+            text-shadow: 0 0 10px #ff0000;
+        }
+
+        /* Terminal Linux Style */
+        .linux-terminal {
+            height: 45%;
+            background-color: #050505;
+            border-top: 2px solid #333;
+            display: flex;
+            flex-direction: column;
+            padding: 10px;
+            color: #00ff00;
+            font-size: 11px;
+        }
+
+        .terminal-header {
+            display: flex;
+            gap: 5px;
+            margin-bottom: 8px;
+        }
+
+        .dot { width: 8px; height: 8px; border-radius: 50%; }
+        .red { background: #ff5f56; }
+        .yellow { background: #ffbd2e; }
+        .green { background: #27c93f; }
+
+        .terminal-body {
+            flex: 1;
+            overflow-y: auto;
+            margin-bottom: 5px;
+            scrollbar-width: none;
+        }
+        .terminal-body::-webkit-scrollbar { display: none; }
+
+        .terminal-input-line { display: flex; }
+        #terminalInput {
+            flex: 1;
+            background: transparent;
+            border: none;
+            outline: none;
+            color: #00ff00;
+            font-family: inherit;
+            padding-left: 5px;
+        }
+
+        .blink-fast { animation: blink 0.2s step-end infinite; }
+        @keyframes blink { 50% { opacity: 0; } }
+    </style>
+</head>
+<body>
+
+<div class="phone-container">
+    <div class="dynamite-bundle">
+        <div class="warning-text" id="warningText">SISTEM COLD: NYALAKAN VIA TERMINAL</div>
+        <div class="sticks-container">
+            <div class="stick"></div>
+            <div class="stick"></div>
+            <div class="stick"></div>
+        </div>
+        <div class="timer-display" id="display">00:00:00</div>
+    </div>
+
+    <div class="linux-terminal" onclick="document.getElementById('terminalInput').focus()">
+        <div class="terminal-header">
+            <div class="dot red"></div>
+            <div class="dot yellow"></div>
+            <div class="dot green"></div>
+            <span style="color:#666; margin-left:5px">root@kali-detonator:~</span>
+        </div>
+        <div class="terminal-body" id="terminalBody"></div>
+        <div class="terminal-input-line">
+            <span># </span>
+            <input type="text" id="terminalInput" autofocus autocomplete="off">
+        </div>
+    </div>
+</div>
+
+<script>
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    let systemActive = false;
+    let countdownInterval = null;
+    let warningInterval = null;
+    let spamTimeout = null;
+    let timeLeft = 0;
+    let totalDuration = 0;
+    let alarmOscillator = null;
+
+    const display = document.getElementById('display');
+    const warningText = document.getElementById('warningText');
+    const terminalBody = document.getElementById('terminalBody');
+    const terminalInput = document.getElementById('terminalInput');
+
+    function printToTerminal(text, type = 'info') {
+        const div = document.createElement('div');
+        if (type === 'error') div.style.color = '#ff3333';
+        if (type === 'success') div.style.color = '#00ffff';
+        if (type === 'warn') div.style.color = '#ffbd2e';
+        div.innerText = text;
+        terminalBody.appendChild(div);
+        terminalBody.scrollTop = terminalBody.scrollHeight;
+    }
+
+    function playTick() {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.frequency.setValueAtTime(800, audioCtx.currentTime);
+        gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+        osc.start(); osc.stop(audioCtx.currentTime + 0.05);
+    }
+
+    function playAlarm() {
+        if (alarmOscillator) return;
+        alarmOscillator = audioCtx.createOscillator();
+        alarmOscillator.type = 'sawtooth';
+        alarmOscillator.frequency.setValueAtTime(440, audioCtx.currentTime);
+        alarmOscillator.connect(audioCtx.destination);
+        alarmOscillator.start();
+    }
+
+    function runSpam() {
+        if (!systemActive || timeLeft <= 0) return;
+        const progress = ((totalDuration - timeLeft) / totalDuration) * 100;
+        let delay = progress < 20 ? 100 : (progress > 80 ? 200 : 1000);
+        
+        const logs = [
+            `[*] Synching with core...`,
+            `[OK] Sector 0x${Math.random().toString(16).slice(2,8).toUpperCase()} verified`,
+            `[!] Heat level: ${(30 + Math.random()*20).toFixed(1)}C`,
+            `Get: http://kali.org/payload-v2.deb [${Math.floor(Math.random()*100)}kb]`
+        ];
+        printToTerminal(logs[Math.floor(Math.random()*logs.length)], progress > 80 ? 'warn' : 'info');
+        spamTimeout = setTimeout(runSpam, delay);
+    }
+
+    function stopEverything() {
+        clearInterval(countdownInterval);
+        clearInterval(warningInterval);
+        clearTimeout(spamTimeout);
+        if (alarmOscillator) { alarmOscillator.stop(); alarmOscillator = null; }
+        display.classList.remove('blink-fast');
+    }
+
+    terminalInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            const input = terminalInput.value.trim();
+            terminalInput.value = '';
+            if (!input) return;
+
+            printToTerminal("# " + input);
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+
+            const args = input.split(' ');
+            const cmd = args[0].toLowerCase();
+
+            if (cmd === 'power-on') {
+                systemActive = true;
+                printToTerminal("[+] Detonator Online. Set time with 'set-time HH:MM'", 'success');
+                warningText.innerText = "READY: WAITING FOR TIME";
+            } 
+            else if (cmd === 'set-time') {
+                if (!systemActive) return printToTerminal("[-] Power on first!", 'error');
+                const time = args[1];
+                if (!/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/.test(time)) return printToTerminal("[-] Use HH:MM format", 'error');
+
+                stopEverything();
+                const [h, m] = time.split(':').map(Number);
+                const now = new Date();
+                let target = new Date();
+                target.setHours(h, m, 0, 0);
+                if (target <= now) target.setDate(target.getDate() + 1);
+
+                timeLeft = Math.floor((target - now) / 1000);
+                totalDuration = timeLeft;
+
+                countdownInterval = setInterval(() => {
+                    if (timeLeft > 0) {
+                        timeLeft--;
+                        const hrs = Math.floor(timeLeft/3600).toString().padStart(2,'0');
+                        const mins = Math.floor((timeLeft%3600)/60).toString().padStart(2,'0');
+                        const secs = (timeLeft%60).toString().padStart(2,'0');
+                        display.innerText = `${hrs}:${mins}:${secs}`;
+                        playTick();
+                    } else {
+                        stopEverything();
+                        display.innerText = "00:00:00";
+                        display.classList.add('blink-fast');
+                        warningText.innerText = "!!! DETONATED !!!";
+                        playAlarm();
+                    }
+                }, 1000);
+                runSpam();
+                printToTerminal(`[+] Timer set to ${time}`, 'success');
+            }
+            else if (cmd === 'power-off') {
+                systemActive = false;
+                stopEverything();
+                display.innerText = "00:00:00";
+                warningText.innerText = "SISTEM COLD: OFF";
+                printToTerminal("[*] System Shutdown.");
+            }
+            else if (cmd === 'clear') {
+                terminalBody.innerHTML = '';
+            }
+            else {
+                printToTerminal("[-] Command unknown", 'error');
+            }
+        }
+    });
+
+    // Initial Welcome
+    printToTerminal("KALI DETONATOR OS v1.0", 'success');
+    printToTerminal("Type 'power-on' to start.");
+</script>
+
+</body>
+</html>
